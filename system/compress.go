@@ -2,9 +2,12 @@ package system
 
 import (
 	"archive/tar"
+	"bytes"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/AhdaAI/IntelliPack/system/file"
 	"github.com/klauspost/compress/zstd"
@@ -20,6 +23,7 @@ func CompressFolder(folderPath, outputFile string) error {
 	encoder, err := zstd.NewWriter(
 		out,
 		zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
+		zstd.WithEncoderConcurrency(runtime.NumCPU()/2),
 	) // ZStandard Writer
 	if err != nil {
 		return err
@@ -45,48 +49,69 @@ func CompressFolder(folderPath, outputFile string) error {
 			return tw.WriteHeader(hdr)
 		}
 
-		hdr := &tar.Header{
-			Name: relPath,
-			Mode: 0644,
-			Size: info.Size(),
-		}
-
-		if file.IsCompressed(path) {
-			hdr.PAXRecords = map[string]string{
-				"compressed": "false",
-			}
-
-			if err := tw.WriteHeader(hdr); err != nil {
-				return err
-			}
-
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			_, err = io.Copy(tw, f)
-			return err
-		}
-
-		hdr.PAXRecords = map[string]string{
-			"compressed": "true",
-		}
-
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		// Compress file data manually
-		// (Zstd compresses the whole tar stream anyway,
-		// but you can pipe file-by-file too)
 		f, err := os.Open(path)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
 
-		_, err = io.Copy(tw, f)
+		// ===========================================================
+		// CASE 1: FILE IS ALREADY COMPRESSED → Write RAW (unmodified)
+		// ===========================================================
+		if file.IsCompressed(path) {
+			log.Printf("Skipping %s ...\n", relPath)
+			hdr := &tar.Header{
+				Name: relPath,
+				Mode: 0644,
+				Size: info.Size(),
+				PAXRecords: map[string]string{
+					"compressed": "false",
+				},
+			}
+
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+
+			_, err = io.Copy(tw, f)
+			return err
+		}
+
+		// ===========================================================
+		// CASE 2: FILE IS NOT COMPRESSED → Compress it now
+		// ===========================================================
+		log.Printf("Compressing %s ...\n", relPath)
+		var buf bytes.Buffer
+
+		z, err := zstd.NewWriter(&buf)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(z, f)
+		if err != nil {
+			z.Close()
+			return err
+		}
+
+		z.Close()
+		compressedBytes := buf.Bytes()
+
+		hdr := &tar.Header{
+			Name:   relPath,
+			Mode:   0644,
+			Size:   int64(len(compressedBytes)),
+			Format: tar.FormatPAX,
+			PAXRecords: map[string]string{
+				"compressed": "true",
+			},
+		}
+
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+
+		_, err = tw.Write(compressedBytes)
 		return err
 	})
 }

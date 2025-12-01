@@ -1,7 +1,6 @@
 package file
 
 import (
-	"log"
 	"path/filepath"
 	"strings"
 )
@@ -12,16 +11,13 @@ var compressedExt = map[string]bool{
 	".gif": true, ".mp4": true, ".mkv": true,
 	".mp3": true, ".ogg": true, ".pdf": true,
 	".zst": true, ".gz": true, ".bz2": true,
-	".xz": true, ".lz4": true,
+	".xz": true, ".lz4": true, ".pak": true,
+	".assets": true, ".sharedAssets": true, ".forge": true,
+	".utoc": true, ".ucas": true,
 }
 
 func IsCompressed(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	compress := compressedExt[ext]
-	if compress {
-		log.Printf("Skipping %s ...\n", path)
-	} else {
-		log.Printf("Compressing %s ...\n", path)
-	}
 	return compress
 }

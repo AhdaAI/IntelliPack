@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/AhdaAI/IntelliPack/system"
@@ -12,7 +13,7 @@ import (
 
 func main() {
 	start := time.Now()
-	extract := flag.Bool("extract", false, "Extract mode (Default: false)")
+	extract := flag.Bool("e", false, "Extract mode (Default: false)")
 	input := flag.String("i", "", "Folder or File to compress.")
 	output := flag.String("o", "", "Output compressed file (e.g. output.tar.zst).")
 	outputDir := flag.String("dir", "", "Output directory (e.g. E:/Testing).")
@@ -41,10 +42,21 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		elapsed := time.Since(start)
+		log.Printf("Compression took : %s", elapsed.Round(time.Second).String())
 	} else {
-		system.ExtractFolder(*input, *output)
+		out := *output
+		if filepath.Ext(*output) != "" {
+			out = *output + ".tar.zst"
+		} else if *outputDir != "" {
+			out = *outputDir + "/" + strings.TrimSuffix(filepath.Base(*input), ".tar.zst")
+		}
+		err := system.ExtractArchive(*input, out)
+		if err != nil {
+			log.Fatalf("Extract failed: %v", err)
+		}
+		elapsed := time.Since(start)
+		log.Printf("Extraction took : %s", elapsed.Round(time.Second).String())
 	}
 	log.Println("Done!")
-	elapsed := time.Since(start)
-	log.Printf("Compression took : %s", elapsed.Round(time.Second).String())
 }
